@@ -5,8 +5,10 @@ import os
 import pickle
 import sys
 import time
+import threading
 from multiprocessing import freeze_support
 from pathlib import Path
+import typing as tp
 
 import numpy as np
 import pandas as pd
@@ -21,62 +23,155 @@ from utils import compute_metrics, image_to_data_url, resize_image
 from vmp.utils.energy import EnergyMeter
 from vmp.utils.flops import FlopsEstimator
 
+_NVML_HANDLES: tp.List[tp.Any] = []
+
 try:
     import pynvml  # type: ignore
 
     _NVML_OK = True
     try:
         pynvml.nvmlInit()  # type: ignore
-        _NVML_HANDLE = pynvml.nvmlDeviceGetHandleByIndex(0)  # type: ignore
+        _visible_devices_env = os.environ.get("CUDA_VISIBLE_DEVICES")
+        if _visible_devices_env:
+            _visible_indices = []
+            for _part in _visible_devices_env.split(","):
+                _part = _part.strip()
+                if not _part or _part.lower() == "none":
+                    continue
+                try:
+                    _visible_indices.append(int(_part))
+                except ValueError:
+                    continue
+        else:
+            _visible_indices = list(
+                range(pynvml.nvmlDeviceGetCount())  # type: ignore
+            )
+        _NVML_HANDLES = []
+        for _idx in _visible_indices:
+            try:
+                _NVML_HANDLES.append(
+                    pynvml.nvmlDeviceGetHandleByIndex(_idx)  # type: ignore
+                )
+            except Exception:
+                continue
+        if not _NVML_HANDLES:
+            _NVML_OK = False
     except Exception:
         _NVML_OK = False
-        _NVML_HANDLE = None
+        _NVML_HANDLES = []
 except Exception:
     _NVML_OK = False
-    _NVML_HANDLE = None
+    _NVML_HANDLES = []
 
 
 def _read_gpu_util_and_mem_pct():
-    if not _NVML_OK or _NVML_HANDLE is None:
+    if not _NVML_OK or not _NVML_HANDLES:
         return None, None
-    try:
-        util = pynvml.nvmlDeviceGetUtilizationRates(_NVML_HANDLE)  # type: ignore
-        mem_info = pynvml.nvmlDeviceGetMemoryInfo(_NVML_HANDLE)  # type: ignore
+    gpu_vals: tp.List[float] = []
+    mem_vals: tp.List[float] = []
+    for handle in _NVML_HANDLES:
+        try:
+            util = pynvml.nvmlDeviceGetUtilizationRates(handle)  # type: ignore
+            mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)  # type: ignore
+        except Exception:
+            continue
+        mem_total = float(getattr(mem_info, "total", 0.0))
         mem_used_pct = (
-            (float(mem_info.used) / float(mem_info.total) * 100.0)
-            if getattr(mem_info, "total", 0)
-            else 0.0
+            (float(mem_info.used) / mem_total * 100.0) if mem_total else 0.0
         )
-        return float(util.gpu), float(
-            mem_used_pct
-        )  # GPU SM utilization %, memory usage %
-    except Exception:
+        gpu_vals.append(float(util.gpu))
+        mem_vals.append(float(mem_used_pct))
+    if not gpu_vals and not mem_vals:
         return None, None
+    gpu_val = max(gpu_vals) if gpu_vals else None
+    mem_val = max(mem_vals) if mem_vals else None
+    return gpu_val, mem_val
+
+
+def _measure_energy_and_gpu(
+    energy_meter: EnergyMeter,
+    fn: tp.Callable,
+    *,
+    warmup: int = 0,
+    iters: int = 1,
+    poll_interval: float = 0.1,
+):
+    gpu_samples = []
+    mem_samples = []
+
+    sampling_enabled = _NVML_OK and bool(_NVML_HANDLES)
+    if not sampling_enabled:
+        energy_j = energy_meter.integrate_energy_joules(fn, warmup=warmup, iters=iters)
+        return energy_j, gpu_samples, mem_samples
+
+    stop_event = threading.Event()
+    post_sample_sleep = min(0.5, max(0.05, poll_interval * 2.0))
+
+    def _sample_once():
+        gpu, mem = _read_gpu_util_and_mem_pct()
+        if gpu is not None:
+            gpu_samples.append(gpu)
+        if mem is not None:
+            mem_samples.append(mem)
+
+    def _sampler():
+        while True:
+            _sample_once()
+            if stop_event.wait(poll_interval):
+                _sample_once()
+                break
+
+    sampler_thread = threading.Thread(
+        target=_sampler, name="gpu-metrics-sampler", daemon=True
+    )
+    sampler_thread.start()
+    try:
+        energy_j = energy_meter.integrate_energy_joules(
+            fn, warmup=warmup, iters=iters
+        )
+    finally:
+        if post_sample_sleep > 0:
+            time.sleep(post_sample_sleep)
+        stop_event.set()
+        sampler_thread.join()
+    return energy_j, gpu_samples, mem_samples
 
 
 load_dotenv()
 
-PATH_DATA = Path("data")
+# Set up paths
+PATH_ROOT = Path(__file__).parent
+PATH_DATA = PATH_ROOT / "data"
+PATH_RESULTS = PATH_ROOT / "results"
+PATH_PROFILING = PATH_RESULTS / "profiling"
+for path in [PATH_DATA, PATH_RESULTS, PATH_PROFILING]:
+    path.mkdir(parents=True, exist_ok=True)
+
 DEBUG = True
-AGG_RESULTS_PATH = Path("results") / "aggregated_metrics.csv"
+GPU_SAMPLING_INTERVAL_S = float(os.environ.get("GPU_SAMPLING_INTERVAL_S", "0.01"))
+AGG_RESULTS_PATH = PATH_RESULTS / "aggregated_metrics.csv"
+
 IMAGE_SIZES = [
     (224, 224),
     (336, 336),
     (448, 448),
     (512, 512),
 ]
+
 PROMPTS = [
     "system_prompt_10",
     "system_prompt_50",
     "system_prompt_100",
     "system_prompt_200",
 ]
+
 BATCH_SIZES = [
     1,
     2,
     4,
     8,
 ]
+
 MODELS = [
     "llava-hf/llava-1.5-13b-hf",
     "Salesforce/blip2-opt-2.7b",
@@ -105,6 +200,18 @@ ANSWERS_COL_MAP = {
     "scienceqa": "answer",
     "textvqa": "answers",
 }
+
+RUN_TIMESTAMP = dt.now().strftime("%y%m%d_%H%M%S")
+
+VLLM_ENABLE_PROFILING = int(os.environ.get("VLLM_ENABLE_PROFILING", 0))
+
+if VLLM_ENABLE_PROFILING:
+    print("VLLM profiling is enabled")
+    run_timestamp_dir = PATH_PROFILING / RUN_TIMESTAMP
+    run_timestamp_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["VLLM_TORCH_PROFILER_DIR"] = run_timestamp_dir.as_posix()
+else:
+    print("VLLM profiling is disabled")
 
 MODELS_RUN = MODELS[:1] if DEBUG else MODELS
 BATCH_SIZES_RUN = BATCH_SIZES[-1:] if DEBUG else BATCH_SIZES
@@ -163,6 +270,7 @@ def main() -> None:
                             for i in range(0, len(df_samples), batch_size):
                                 batch = df_samples.iloc[i : i + batch_size]
                                 batch_messages = []
+                                batch_entries = []
                                 for idx, row in batch.iterrows():
                                     image_arr = row["resized_image"]
                                     image_url = image_to_data_url(image_arr)
@@ -192,39 +300,46 @@ def main() -> None:
                                             {"role": "user", "content": user_content},
                                         ]
                                     )
-                                if len(batch_messages) == 0:
+                                    batch_entries.append((idx, row, question_text))
+                                if len(batch_entries) == 0:
                                     continue
                                 # measure energy + latency around single chat call
                                 _holder = {}
 
                                 def _run_once():
-                                    _holder["outputs"] = llm.chat(
-                                        batch_messages, sampling_params=sampling_params
-                                    )
+                                    if VLLM_ENABLE_PROFILING:
+                                        llm.start_profile()
+                                    try:
+                                        _holder["outputs"] = llm.chat(
+                                            batch_messages, sampling_params=sampling_params
+                                        )
+                                    except Exception as e:
+                                        print(f"Error during profiling: {e}")
+                                    finally:
+                                        if VLLM_ENABLE_PROFILING:
+                                            llm.stop_profile()
 
-                                # sample GPU before
-                                gpu_before, mem_before = _read_gpu_util_and_mem_pct()
                                 t0 = time.perf_counter()
-                                ej = energy_meter.integrate_energy_joules(
-                                    _run_once, warmup=0, iters=1
+                                ej, gpu_samples_batch, mem_samples_batch = (
+                                    _measure_energy_and_gpu(
+                                        energy_meter,
+                                        _run_once,
+                                        warmup=0,
+                                        iters=1,
+                                        poll_interval=GPU_SAMPLING_INTERVAL_S,
+                                    )
                                 )
                                 t1 = time.perf_counter()
-                                # sample GPU after
-                                gpu_after, mem_after = _read_gpu_util_and_mem_pct()
                                 total_energy_j += float(ej)
                                 latency_ms = (t1 - t0) * 1000.0
                                 batch_latencies_ms.append(latency_ms)
-                                # optional GPU utilization (take max of before/after; mem usage from 'after' if present)
-                                sample_gpu_vals = [
-                                    v for v in (gpu_before, gpu_after) if v is not None
-                                ]
-                                if sample_gpu_vals:
-                                    gpu_utils.append(max(sample_gpu_vals))
-                                if mem_after is not None:
-                                    mem_utils.append(mem_after)
+                                if gpu_samples_batch:
+                                    gpu_utils.extend(gpu_samples_batch)
+                                if mem_samples_batch:
+                                    mem_utils.extend(mem_samples_batch)
                                 outputs = _holder["outputs"]
-                                for (row_idx, row), output in zip(
-                                    batch.iterrows(), outputs
+                                for (row_idx, row, question_text), output in zip(
+                                    batch_entries, outputs
                                 ):
                                     text = (
                                         output.outputs[0].text
@@ -276,11 +391,11 @@ def main() -> None:
                                     model_param_count_b=model_params_b,
                                 )
                                 total_est_tflops += float(est.total_tflops)
-                            out_dir = Path("results")
+
+                            out_dir = PATH_RESULTS
                             out_dir.mkdir(parents=True, exist_ok=True)
                             model_safe = model.replace("/", "_")
-                            datetime_str = dt.now().strftime("%y%m%d_%H%M%S")
-                            base_name = f"{datetime_str}_{subdir.name}_{model_safe}_{image_size[0]}_{prompt_len}_bs{batch_size}"
+                            base_name = f"{RUN_TIMESTAMP}_{subdir.name}_{model_safe}_{image_size[0]}_{prompt_len}_bs{batch_size}"
 
                             # raw results only in debug mode
                             if DEBUG:
