@@ -1,14 +1,14 @@
 import gc
-from datetime import datetime as dt
 import json
 import os
 import pickle
 import sys
-import time
 import threading
+import time
+import typing as tp
+from datetime import datetime as dt
 from multiprocessing import freeze_support
 from pathlib import Path
-import typing as tp
 
 import numpy as np
 import pandas as pd
@@ -17,6 +17,7 @@ import torch
 import yaml
 from dotenv import load_dotenv
 from PIL import Image
+from tqdm import tqdm
 from vllm import LLM, SamplingParams
 
 from utils import compute_metrics, image_to_data_url, resize_image
@@ -43,9 +44,7 @@ try:
                 except ValueError:
                     continue
         else:
-            _visible_indices = list(
-                range(pynvml.nvmlDeviceGetCount())  # type: ignore
-            )
+            _visible_indices = list(range(pynvml.nvmlDeviceGetCount()))  # type: ignore
         _NVML_HANDLES = []
         for _idx in _visible_indices:
             try:
@@ -76,9 +75,7 @@ def _read_gpu_util_and_mem_pct():
         except Exception:
             continue
         mem_total = float(getattr(mem_info, "total", 0.0))
-        mem_used_pct = (
-            (float(mem_info.used) / mem_total * 100.0) if mem_total else 0.0
-        )
+        mem_used_pct = (float(mem_info.used) / mem_total * 100.0) if mem_total else 0.0
         gpu_vals.append(float(util.gpu))
         mem_vals.append(float(mem_used_pct))
     if not gpu_vals and not mem_vals:
@@ -126,9 +123,7 @@ def _measure_energy_and_gpu(
     )
     sampler_thread.start()
     try:
-        energy_j = energy_meter.integrate_energy_joules(
-            fn, warmup=warmup, iters=iters
-        )
+        energy_j = energy_meter.integrate_energy_joules(fn, warmup=warmup, iters=iters)
     finally:
         if post_sample_sleep > 0:
             time.sleep(post_sample_sleep)
@@ -223,20 +218,24 @@ if DEBUG:
 
 
 def main() -> None:
-    for model in MODELS_RUN:
-        for batch_size in BATCH_SIZES_RUN:
+    for model in tqdm(MODELS_RUN, desc="Processing model", total=len(MODELS_RUN)):
+        for batch_size in tqdm(
+            BATCH_SIZES_RUN, desc="Processing batch size", total=len(BATCH_SIZES_RUN)
+        ):
             llm = LLM(
                 model=model,
                 # download_dir=os.environ["HF_HOME"],
                 trust_remote_code=True,
-                tensor_parallel_size=torch.cuda.device_count(),
+                # tensor_parallel_size=torch.cuda.device_count(),
                 enable_prefix_caching=True,
                 gpu_memory_utilization=0.95,
                 max_num_seqs=batch_size,
                 # block_size=32,
             )
             try:
-                for subdir in DATASET_DIRS:
+                for subdir in tqdm(
+                    DATASET_DIRS, desc="Processing dataset", total=len(DATASET_DIRS)
+                ):
                     with open(subdir / "samples_300.pkl", "rb") as f:
                         samples = pickle.load(f)
                     df_samples = pd.DataFrame(samples)
@@ -250,7 +249,11 @@ def main() -> None:
                         )
                         df_samples = df_samples.copy()
                         df_samples["resized_image"] = resized_images
-                        for prompt_len in PROMPTS_RUN:
+                        for prompt_len in tqdm(
+                            PROMPTS_RUN,
+                            desc="Processing prompt",
+                            total=len(PROMPTS_RUN),
+                        ):
                             system_prompt = dataset_prompt[prompt_len]
                             sampling_params = SamplingParams(
                                 temperature=0.0,
@@ -267,7 +270,11 @@ def main() -> None:
                             total_est_tflops = 0.0
                             energy_meter = EnergyMeter()
                             flops_estimator = FlopsEstimator()
-                            for i in range(0, len(df_samples), batch_size):
+                            for i in tqdm(
+                                range(0, len(df_samples), batch_size),
+                                desc="Processing batch",
+                                total=len(df_samples) // batch_size,
+                            ):
                                 batch = df_samples.iloc[i : i + batch_size]
                                 batch_messages = []
                                 batch_entries = []
@@ -311,7 +318,8 @@ def main() -> None:
                                         llm.start_profile()
                                     try:
                                         _holder["outputs"] = llm.chat(
-                                            batch_messages, sampling_params=sampling_params
+                                            batch_messages,
+                                            sampling_params=sampling_params,
                                         )
                                     except Exception as e:
                                         print(f"Error during profiling: {e}")
