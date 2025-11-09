@@ -1,4 +1,5 @@
 import gc
+from datetime import datetime as dt
 import json
 import os
 import pickle
@@ -119,7 +120,7 @@ def main() -> None:
         for batch_size in BATCH_SIZES_RUN:
             llm = LLM(
                 model=model,
-                download_dir=os.environ["HF_HOME"],
+                # download_dir=os.environ["HF_HOME"],
                 trust_remote_code=True,
                 tensor_parallel_size=torch.cuda.device_count(),
                 enable_prefix_caching=True,
@@ -278,7 +279,8 @@ def main() -> None:
                             out_dir = Path("results")
                             out_dir.mkdir(parents=True, exist_ok=True)
                             model_safe = model.replace("/", "_")
-                            base_name = f"{subdir.name}_{model_safe}_{image_size[0]}_{prompt_len}_bs{batch_size}"
+                            datetime_str = dt.now().strftime("%y%m%d_%H%M%S")
+                            base_name = f"{datetime_str}_{subdir.name}_{model_safe}_{image_size[0]}_{prompt_len}_bs{batch_size}"
 
                             # raw results only in debug mode
                             if DEBUG:
