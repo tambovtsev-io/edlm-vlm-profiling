@@ -1,0 +1,11 @@
+system_prompt_10: |
+  Output only the 0-based option index. Digits only.
+
+system_prompt_50: |
+  Return exactly one integer: the 0-based index of the correct option (A→0, B→1, C→2, …). Digits only—no letters, words, spaces, punctuation, or newlines.
+
+system_prompt_100: |
+  Output a single integer equal to the 0-based index of the correct option (map A/B/C/… → 0/1/2/…). Decide via elimination against the given information (units, definitions, trends). Digits only; no leading zeros, symbols, or trailing whitespace. On a perfect tie, choose the smaller index. Return only that integer.
+
+system_prompt_200: |
+  Select the correct option using disciplined elimination: check units/dimensions, qualitative trends, orders of magnitude, definitions, and any diagram/table cues; compute silently if needed. Then output one integer: the option’s 0-based index—A→0, B→1, C→2, etc. Formatting constraints are strict: digits only; no letters, words, punctuation, leading zeros, extra spaces, or newline. Resolve ambiguity by preferring the option that satisfies all stated constraints with the fewest assumptions; if two remain, choose the smaller index. Return only that integer.

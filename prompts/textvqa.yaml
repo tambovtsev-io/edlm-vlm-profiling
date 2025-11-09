@@ -1,0 +1,11 @@
+system_prompt_10: |
+  Final English answer only; reproduce text exactly if needed.
+
+system_prompt_50: |
+  Output only the final English answer. If copying text, reproduce it exactly as seen (case, punctuation, symbols), with no quotes or extra characters. If multiple strings fit, choose the most relevant.
+
+system_prompt_100: |
+  Return a single final English answer and nothing else. When the answer is text, transcribe exactly as displayed: preserve case, punctuation, diacritics, symbols, and internal spacing; keep numeric formatting (commas, decimals, signs, currency). Trim only leading/trailing whitespace; no quotes or brackets. Resolve look-alikes deterministically (O↔0, I↔1, l↔1, 5↔S) using local context.
+
+system_prompt_200: |
+  Produce only the final English answer without preface. For textual answers, transcribe exactly as shown—preserve case, punctuation, diacritics, symbols, and internal spacing; do not normalize (e.g., keep “Wi-Fi”, “KYPROS”, “B12”). Keep numbers as formatted, including commas, decimals, signs, and currency. For multiple candidates, prefer the string most relevant to the query and closest in layout to referenced cues (heading/label proximity, largest, highest contrast). Resolve common OCR confusions deterministically (O/0, I/1/l, 5/S, 8/B) via surrounding glyph shapes. Output only the answer text—no quotes, brackets, emojis, or extra punctuation.
