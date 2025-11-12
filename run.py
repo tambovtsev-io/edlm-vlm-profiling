@@ -1,4 +1,5 @@
 import gc
+import logging
 import json
 import os
 import pickle
@@ -23,6 +24,10 @@ from vllm import LLM, SamplingParams
 from utils import compute_metrics, image_to_data_url, resize_image
 from vmp.utils.energy import EnergyMeter
 from vmp.utils.flops import FlopsEstimator
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 _NVML_HANDLES: tp.List[tp.Any] = []
 
@@ -142,7 +147,7 @@ PATH_PROFILING = PATH_RESULTS / "profiling"
 for path in [PATH_DATA, PATH_RESULTS, PATH_PROFILING]:
     path.mkdir(parents=True, exist_ok=True)
 
-DEBUG = True
+DEBUG = False
 GPU_SAMPLING_INTERVAL_S = float(os.environ.get("GPU_SAMPLING_INTERVAL_S", "0.01"))
 AGG_RESULTS_PATH = PATH_RESULTS / "aggregated_metrics.csv"
 
@@ -154,17 +159,18 @@ IMAGE_SIZES = [
 ]
 
 PROMPTS = [
-    "system_prompt_10",
-    "system_prompt_50",
+    # "system_prompt_10",
+    # "system_prompt_50",
     "system_prompt_100",
-    "system_prompt_200",
+    # "system_prompt_200",
 ]
 
 BATCH_SIZES = [
-    1,
-    2,
-    4,
-    8,
+    # 1,
+    # 4,
+    # 16,
+    64,
+    # 320,
 ]
 
 MODELS = [
@@ -174,7 +180,8 @@ MODELS = [
     "Salesforce/instructblip-flan-t5-xl",
     "Salesforce/blip2-flan-t5-xl",
     "adept/fuyu-8b",
-    "zai-org/cogagent-vqa-hf" "vikhyatk/moondream2",
+    "zai-org/cogagent-vqa-hf",
+    "vikhyatk/moondream2",
     "HuggingFaceM4/idefics2-8b",
 ]
 
@@ -256,7 +263,7 @@ def main() -> None:
                         ):
                             system_prompt = dataset_prompt[prompt_len]
                             sampling_params = SamplingParams(
-                                temperature=0.0,
+                                temperature=0.01,
                                 top_p=1.0,
                                 max_tokens=256,
                             )
@@ -284,9 +291,11 @@ def main() -> None:
                                     question_text = row["question"]
                                     choices = row.get("choices", [])
                                     if choices != []:
-                                        question_text += (
-                                            f"\nChoices: {' '.join(choices)}"
+                                        choices_text = "\n".join(
+                                            f"{i+1}. {c}" for i, c in enumerate(choices)
                                         )
+                                        question_text += f"\n\nChoices:\n{choices_text}"
+                                    question_text = question_text.strip() + "\n"
                                     user_content = []
                                     if len(question_text) > 0:
                                         user_content.append(
@@ -317,10 +326,13 @@ def main() -> None:
                                     if VLLM_ENABLE_PROFILING:
                                         llm.start_profile()
                                     try:
-                                        _holder["outputs"] = llm.chat(
+                                        outputs = llm.chat(
                                             batch_messages,
                                             sampling_params=sampling_params,
                                         )
+                                        _holder["outputs"] = outputs
+                                        # print(f"Outputs: {outputs}")
+
                                     except Exception as e:
                                         print(f"Error during profiling: {e}")
                                     finally:

@@ -130,14 +130,18 @@ def accuracy_scienceqa(
     Точность для ScienceQA при условии, что предсказания модели — это 0-based индексы без лишних слов.
     Возвращает accuracy.
     """
-    pred = pd.to_numeric(df[col_llm_answer], errors="coerce").astype("Int64")
-    gold = pd.to_numeric(df[col_answers], errors="coerce").astype("Int64")
+    pred = df[col_llm_answer]
+    gold = df[col_answers]
 
-    mask = pred.notna() & gold.notna()
+    mask = (pred.str.len() > 0) & (gold.str.len() > 0)
     if not mask.any():
         return 0.0
 
-    acc = float((pred[mask] == gold[mask]).mean())
+    acc = float(
+        pred[mask].str.contains(gold[mask], regex=False)
+        .mean()
+    )
+    print(df[[col_llm_answer, col_answers]].head(10))
     return acc
 
 
