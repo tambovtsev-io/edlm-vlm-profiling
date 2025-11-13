@@ -131,17 +131,19 @@ def accuracy_scienceqa(
     Возвращает accuracy.
     """
     pred = df[col_llm_answer]
+
     gold = df[col_answers]
+    gold = gold.apply(lambda x: 0 if isinstance(x, list) and len(x) == 0 else x)
+    gold = gold.astype(int) + 1
+    gold = gold.astype(str)
 
-    mask = (pred.str.len() > 0) & (gold.str.len() > 0)
-    if not mask.any():
-        return 0.0
 
-    acc = float(
-        pred[mask].str.contains(gold[mask], regex=False)
-        .mean()
-    )
-    print(df[[col_llm_answer, col_answers]].head(10))
+    # mask = (pred.str.len() > 0) & (gold.str.len() > 0)
+    # if not mask.any():
+    #     return 0.0
+
+    n_items = len(pred)
+    acc = sum(str(g) in str(p) for p, g in zip(pred, gold)) / n_items
     return acc
 
 
