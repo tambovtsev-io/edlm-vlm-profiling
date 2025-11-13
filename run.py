@@ -1,9 +1,7 @@
 import gc
 import logging
-import json
 import os
 import pickle
-import sys
 import threading
 import time
 import typing as tp
@@ -11,20 +9,16 @@ from datetime import datetime as dt
 from multiprocessing import freeze_support
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-import requests
 import torch
 import yaml
 from dotenv import load_dotenv
-from PIL import Image
+from numpy import np
 from tqdm import tqdm
 from vllm import LLM, SamplingParams
 
-from utils import compute_metrics, image_to_data_url, resize_image
-from vmp.utils.energy import EnergyMeter
-from vmp.utils.flops import FlopsEstimator
-
+from vmp.utils import (EnergyMeter, FlopsEstimator, compute_metrics,
+                       image_to_data_url, resize_image)
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -159,18 +153,18 @@ IMAGE_SIZES = [
 ]
 
 PROMPTS = [
-    # "system_prompt_10",
-    # "system_prompt_50",
+    "system_prompt_10",
+    "system_prompt_50",
     "system_prompt_100",
-    # "system_prompt_200",
+    "system_prompt_200",
 ]
 
 BATCH_SIZES = [
-    # 1,
-    # 4,
-    # 16,
-    64,
-    # 320,
+    1,
+    4,
+    16,
+    # 64,
+    320,
 ]
 
 MODELS = [
@@ -222,8 +216,10 @@ PROMPTS_RUN = PROMPTS[:1] if DEBUG else PROMPTS
 DATASET_DIRS = [
     d
     for d in PATH_DATA.iterdir()
-    if d.is_dir() and d.name in [
-        # "scienceqa",
+    if d.is_dir()
+    and d.name
+    in [
+        "scienceqa",
         "textvqa",
         "coco",
     ]
