@@ -175,14 +175,14 @@ BATCH_SIZES = [
 
 MODELS = [
     "llava-hf/llava-1.5-13b-hf",
-    "Salesforce/blip2-opt-2.7b",
-    "Salesforce/instructblip-vicuna-7b",
-    "Salesforce/instructblip-flan-t5-xl",
-    "Salesforce/blip2-flan-t5-xl",
-    "adept/fuyu-8b",
-    "zai-org/cogagent-vqa-hf",
-    "vikhyatk/moondream2",
-    "HuggingFaceM4/idefics2-8b",
+    # "Salesforce/blip2-opt-2.7b",
+    # "Salesforce/instructblip-vicuna-7b",
+    # "Salesforce/instructblip-flan-t5-xl",
+    # "Salesforce/blip2-flan-t5-xl",
+    # "adept/fuyu-8b",
+    # "zai-org/cogagent-vqa-hf",
+    # "vikhyatk/moondream2",
+    # "HuggingFaceM4/idefics2-8b",
 ]
 
 PARAMS_B = {
@@ -219,7 +219,15 @@ MODELS_RUN = MODELS[:1] if DEBUG else MODELS
 BATCH_SIZES_RUN = BATCH_SIZES[-1:] if DEBUG else BATCH_SIZES
 IMAGE_SIZES_RUN = IMAGE_SIZES[:1] if DEBUG else IMAGE_SIZES
 PROMPTS_RUN = PROMPTS[:1] if DEBUG else PROMPTS
-DATASET_DIRS = [d for d in PATH_DATA.iterdir() if d.is_dir()]
+DATASET_DIRS = [
+    d
+    for d in PATH_DATA.iterdir()
+    if d.is_dir() and d.name in [
+        # "scienceqa",
+        "textvqa",
+        "coco",
+    ]
+]
 if DEBUG:
     DATASET_DIRS = DATASET_DIRS[:1]
 
@@ -418,9 +426,8 @@ def main() -> None:
                             base_name = f"{RUN_TIMESTAMP}_{subdir.name}_{model_safe}_{image_size[0]}_{prompt_len}_bs{batch_size}"
 
                             # raw results only in debug mode
-                            if DEBUG:
-                                raw_path = out_dir / f"{base_name}_raw.csv"
-                                pd.DataFrame(results).to_csv(raw_path, index=False)
+                            raw_path = out_dir / f"{base_name}_raw.csv"
+                            pd.DataFrame(results).to_csv(raw_path, index=False)
 
                             # compute and save aggregated metric
                             metric_value = float("nan")
