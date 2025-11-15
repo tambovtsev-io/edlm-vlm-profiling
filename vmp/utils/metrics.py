@@ -137,14 +137,14 @@ def accuracy_scienceqa(
     gold = gold.astype(int) + 1
     gold = gold.astype(str)
 
+    choices = df["choices"]
+    total = 0
+    for p, g, c in zip(pred, gold, choices):
+        gold_text = c[int(g) - 1]
+        if str(g) in str(p) or str(gold_text) in str(p):
+            total += 1
 
-    # mask = (pred.str.len() > 0) & (gold.str.len() > 0)
-    # if not mask.any():
-    #     return 0.0
-
-    n_items = len(pred)
-    acc = sum(str(g) in str(p) for p, g in zip(pred, gold)) / n_items
-    return acc
+    return total / len(pred)
 
 
 def compute_metrics(
