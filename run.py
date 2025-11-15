@@ -13,7 +13,7 @@ import pandas as pd
 import torch
 import yaml
 from dotenv import load_dotenv
-from numpy import np
+import numpy as np
 from tqdm import tqdm
 from vllm import LLM, SamplingParams
 
@@ -160,15 +160,18 @@ PROMPTS = [
 ]
 
 BATCH_SIZES = [
-    1,
+    # 1,
     4,
     16,
-    # 64,
+    64,
     320,
 ]
 
 MODELS = [
-    "llava-hf/llava-1.5-13b-hf",
+    # "llava-hf/llava-1.5-13b-hf",
+    # "llava-hf/llava-v1.6-mistral-7b-hf",
+    # "unsloth/Llama-3.2-11B-Vision-Instruct",
+    "deepseek-ai/deepseek-vl2",
     # "Salesforce/blip2-opt-2.7b",
     # "Salesforce/instructblip-vicuna-7b",
     # "Salesforce/instructblip-flan-t5-xl",
@@ -179,8 +182,17 @@ MODELS = [
     # "HuggingFaceM4/idefics2-8b",
 ]
 
+HF_OVERRIDES = {
+    "deepseek-ai/deepseek-vl2": {
+        "architectures": ["DeepseekVLV2ForCausalLM"]
+    },
+}
+
 PARAMS_B = {
     "llava-hf/llava-1.5-13b-hf": 13.0,
+    "llava-hf/llava-v1.6-mistral-7b-hf": 7.0,
+    "unsloth/Llama-3.2-11B-Vision-Instruct": 11.0,
+    "deepseek-ai/deepseek-vl2": 27.0,
     "Salesforce/blip2-opt-2.7b": 2.7,
     "Salesforce/instructblip-vicuna-7b": 7.0,
     "Salesforce/instructblip-flan-t5-xl": 3.0,
@@ -242,6 +254,7 @@ def main() -> None:
                 gpu_memory_utilization=0.95,
                 max_num_seqs=batch_size,
                 # block_size=32,
+                hf_overrides=HF_OVERRIDES.get(model),
             )
             try:
                 for subdir in tqdm(
@@ -383,6 +396,7 @@ def main() -> None:
                                             "question": question_text,
                                             "answer": row.get("answer", "")
                                             or row.get("answers", []),
+                                            "choices": row.get("choices", []),
                                             "response": text,
                                         }
                                     )
@@ -416,10 +430,11 @@ def main() -> None:
                                 )
                                 total_est_tflops += float(est.total_tflops)
 
-                            out_dir = PATH_RESULTS
+                            out_dir = PATH_RESULTS / "logs"
                             out_dir.mkdir(parents=True, exist_ok=True)
                             model_safe = model.replace("/", "_")
-                            base_name = f"{RUN_TIMESTAMP}_{subdir.name}_{model_safe}_{image_size[0]}_{prompt_len}_bs{batch_size}"
+                            datetime = dt.now().strftime("%y%m%d_%H%M%S")
+                            base_name = f"{datetime}_{subdir.name}_{model_safe}_{image_size[0]}_{prompt_len}_bs{batch_size}"
 
                             # raw results only in debug mode
                             raw_path = out_dir / f"{base_name}_raw.csv"
@@ -478,6 +493,7 @@ def main() -> None:
                                 f"[AGG] dataset={subdir.name} model={model_safe} size={image_size[0]}x{image_size[1]} prompt={prompt_len} bs={batch_size} metric={metric_value}"
                             )
             finally:
+                # del llm.llm_engine.model_executor.driver_worker
                 del llm
                 gc.collect()
                 torch.cuda.empty_cache()
