@@ -141,7 +141,9 @@ PATH_PROFILING = PATH_RESULTS / "profiling"
 for path in [PATH_DATA, PATH_RESULTS, PATH_PROFILING]:
     path.mkdir(parents=True, exist_ok=True)
 
-DEBUG = False
+DEBUG = int(os.environ.get("DEBUG", "0")) == 1
+RUN_ONCE = int(os.environ.get("RUN_ONCE", "0")) == 1
+
 GPU_SAMPLING_INTERVAL_S = float(os.environ.get("GPU_SAMPLING_INTERVAL_S", "0.01"))
 AGG_RESULTS_PATH = PATH_RESULTS / "aggregated_metrics.csv"
 
@@ -160,7 +162,7 @@ PROMPTS = [
 ]
 
 BATCH_SIZES = [
-    # 1,
+    1,
     4,
     16,
     64,
@@ -168,18 +170,18 @@ BATCH_SIZES = [
 ]
 
 MODELS = [
-    # "llava-hf/llava-1.5-13b-hf",
-    # "llava-hf/llava-v1.6-mistral-7b-hf",
-    # "unsloth/Llama-3.2-11B-Vision-Instruct",
+    "llava-hf/llava-1.5-13b-hf",
+    "llava-hf/llava-v1.6-mistral-7b-hf",
+    "unsloth/Llama-3.2-11B-Vision-Instruct",
     "deepseek-ai/deepseek-vl2",
-    # "Salesforce/blip2-opt-2.7b",
-    # "Salesforce/instructblip-vicuna-7b",
-    # "Salesforce/instructblip-flan-t5-xl",
-    # "Salesforce/blip2-flan-t5-xl",
-    # "adept/fuyu-8b",
-    # "zai-org/cogagent-vqa-hf",
-    # "vikhyatk/moondream2",
-    # "HuggingFaceM4/idefics2-8b",
+    "Salesforce/blip2-opt-2.7b",
+    "Salesforce/instructblip-vicuna-7b",
+    "Salesforce/instructblip-flan-t5-xl",
+    "Salesforce/blip2-flan-t5-xl",
+    "adept/fuyu-8b",
+    "zai-org/cogagent-vqa-hf",
+    "vikhyatk/moondream2",
+    "HuggingFaceM4/idefics2-8b",
 ]
 
 HF_OVERRIDES = {
@@ -429,6 +431,8 @@ def main() -> None:
                                     model_param_count_b=model_params_b,
                                 )
                                 total_est_tflops += float(est.total_tflops)
+                                if RUN_ONCE:
+                                    break
 
                             out_dir = PATH_RESULTS / "logs"
                             out_dir.mkdir(parents=True, exist_ok=True)
@@ -493,7 +497,6 @@ def main() -> None:
                                 f"[AGG] dataset={subdir.name} model={model_safe} size={image_size[0]}x{image_size[1]} prompt={prompt_len} bs={batch_size} metric={metric_value}"
                             )
             finally:
-                # del llm.llm_engine.model_executor.driver_worker
                 del llm
                 gc.collect()
                 torch.cuda.empty_cache()
