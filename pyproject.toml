@@ -5,12 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10.4"
 dependencies = [
+    "absl-py",
     "black>=25.9.0",
     "datasets>=4.3.0",
+    "evaluate>=0.4.6",
     "huggingface-hub>=0.36.0",
     "isort>=7.0.0",
     "jupyter>=1.1.1",
     "matplotlib>=3.10.7",
+    "nltk>=3.9.2",
     "openai>=1.66.3",
     "pillow>=11.1.0",
     "pydantic>=2.10.6",
@@ -18,23 +21,28 @@ dependencies = [
     "pyjoules>=0.5.1",
     "pynvml>=13.0.1",
     "python-dotenv>=1.2.0",
+    "rouge-score>=0.1.2",
     "seaborn>=0.13.2",
     "timm>=1.0.21",
     "torch",
     "torchvision",
-    "transformers>=4.57.1",
     "vllm>=0.8.5.post1",
 ]
 
 [tool.uv.sources]
 # Default to CUDA 12.4
 # Override by changing index to pytorch-cuXXX or pytorch-cpu
-torch = { index = "pytorch-cu124" }
-torchvision = { index = "pytorch-cu124" }
+torch = { index = "pytorch-cu129" }
+torchvision = { index = "pytorch-cu129" }
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu129"
+url = "https://download.pytorch.org/whl/cu129"
 explicit = true
 
 [[tool.uv.index]]

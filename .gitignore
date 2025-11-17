@@ -1,6 +1,6 @@
 # Project folders
 data/*
-results/
+results/*
 
 # Mac OS-specific storage files
 .DS_Store
